@@ -60,6 +60,10 @@ function pub(v){ return { id:v.id, name:v.name, skin:v.skin, avatar:v.avatar||''
 function snapshot(){ return { t:'state', settings, viewers:[...viewers.values()].map(pub), cap: capacity(), startedAt, tiktok: tiktokState }; }
 
 function seat(id, name, opts = {}){
+  // Không xếp chỗ cho người không có ID (TikTok đôi khi trả user thiếu uniqueId/userId),
+  // nếu không sẽ lưu khóa undefined vào viewers và làm sập vòng lặp bot.
+  if (!id) return { v:null, isNew:false };
+  id = String(id);
   let v = viewers.get(id);
   if (v){ v.lastAt = Date.now(); if (opts.avatar) v.avatar = opts.avatar; return { v, isNew:false }; }
   if (viewers.size >= 100){                     // full: the longest-quiet non-donor stands up
@@ -148,20 +152,28 @@ async function connectTikTok(uniqueId){
   try {
     TikTokLib ||= await import('tiktok-live-connector');
     const { TikTokLiveConnection, WebcastEvent, ControlEvent } = TikTokLib;
-    const conn = new TikTokLiveConnection(uniqueId, { enableExtendedGiftInfo: true, processInitialData: false });
+    // Tắt enableExtendedGiftInfo: bật lên thì thư viện phải tải danh sách quà bằng request có chữ ký,
+    // mà Euler Stream chỉ ký loại request này cho gói Business trả phí -> lỗi "requires a Business plan".
+    // Tên quà và số kim cương vẫn có sẵn trong d.giftDetails của mỗi sự kiện tặng quà.
+    const conn = new TikTokLiveConnection(uniqueId, { enableExtendedGiftInfo: false, processInitialData: false });
     const av = u => u?.profilePicture?.url?.[0] || u?.profilePicture?.urlList?.[0] || u?.avatarThumb?.urlList?.[0] || u?.avatarThumb?.url?.[0] || '';
-    const nm = u => u?.nickname || u?.uniqueId || 'ẩn danh';
-    conn.on(WebcastEvent.CHAT, d => onChat(d.user?.uniqueId || d.user?.userId, nm(d.user), d.comment, av(d.user)));
+    // tiktok-live-connector 2.5 (proto v3) đổi tên trường: user.uniqueId -> user.displayId, user.userId -> user.id.
+    // Đọc cả tên mới lẫn tên cũ để chạy được với nhiều phiên bản thư viện.
+    const nm = u => u?.nickname || u?.uniqueId || u?.displayId || 'ẩn danh';
+    const uid = u => String(u?.uniqueId || u?.displayId || u?.userId || u?.id || '');
+    conn.on(WebcastEvent.CHAT, d => onChat(uid(d.user), nm(d.user), d.comment ?? d.content, av(d.user)));
     conn.on(WebcastEvent.GIFT, d => {
-      const type = d.giftDetails?.giftType ?? d.extendedGiftInfo?.type;
+      // Thông tin quà: bản mới nằm ở d.gift, bản cũ ở d.giftDetails / d.extendedGiftInfo
+      const g = d.gift || d.giftDetails || d.extendedGiftInfo || {};
+      const type = g.type ?? g.giftType;
       if (type === 1 && !d.repeatEnd) return;                       // streak still running
-      const gname = d.giftDetails?.giftName || d.extendedGiftInfo?.name || 'quà';
-      const dia = d.giftDetails?.diamondCount ?? d.extendedGiftInfo?.diamond_count ?? 1;
-      onGift(d.user?.uniqueId || d.user?.userId, nm(d.user), gname, d.repeatCount || 1, dia, av(d.user));
+      const gname = g.name || g.giftName || 'quà';
+      const dia = g.diamondCount ?? g.diamond_count ?? 1;
+      onGift(uid(d.user), nm(d.user), gname, d.repeatCount || 1, dia, av(d.user));
       addLog(`🎁 ${nm(d.user)} tặng ${gname} x${d.repeatCount || 1}`);
     });
-    conn.on(WebcastEvent.MEMBER, d => { if (settings.joinOnEnter) seat(d.user?.uniqueId, nm(d.user), { avatar: av(d.user) }); });
-    conn.on(WebcastEvent.LIKE, d => broadcast({ t:'like', id: d.user?.uniqueId, n: d.likeCount || 1 }));
+    conn.on(WebcastEvent.MEMBER, d => { if (settings.joinOnEnter) seat(uid(d.user), nm(d.user), { avatar: av(d.user) }); });
+    conn.on(WebcastEvent.LIKE, d => broadcast({ t:'like', id: uid(d.user), n: d.likeCount || 1 }));
     conn.on(ControlEvent.DISCONNECTED, () => { tiktokState = { ...tiktokState, status: 'disconnected' }; broadcast({ t:'tiktok', ...tiktokState }); addLog('TikTok: mất kết nối'); });
     conn.on(ControlEvent.ERROR, e => addLog('TikTok lỗi: ' + (e?.info || e?.message || e)));
     const st = await conn.connect();
@@ -222,14 +234,17 @@ function applySettings(o){ for (const [k, fn] of Object.entries(SETTING_RULES)) 
 let botTimer = null;
 const BOT_LINES = ['Nam mô A Di Đà Phật', 'Nam mô Bổn Sư Thích Ca Mâu Ni Phật', 'Cầu cho gia đình bình an', 'Con xin thành tâm sám hối', 'nữ', 'nam', 'bà',
   'Nguyện cầu cha mẹ mạnh khỏe', 'Mô Phật, an lạc quá', 'Chúc mọi người một ngày bình an', 'sư', 'Cầu công việc hanh thông'];
+// Ký hiệu nhận biết người ngồi do bot mô phỏng (thay cho chữ "·bot").
+// Muốn dùng lá bồ đề thì đổi thành '🍃'. Giọng đọc tự bỏ qua emoji nên không đọc ký hiệu này.
+const BOT_MARK = '🙏';
 function setBots(on, n, pace){
   clearInterval(botTimer); botTimer = null;
   if (on){
     n = clamp(n, 1, 100);
-    for (let i = 0; i < n; i++) seat('bot_' + i, DEMO_NAMES[(i + 7) % DEMO_NAMES.length] + ' ·bot', { demo: true });
+    for (let i = 0; i < n; i++) seat('bot_' + i, DEMO_NAMES[(i + 7) % DEMO_NAMES.length] + ' ' + BOT_MARK, { demo: true });
     const every = { slow: 4000, mid: 1800, fast: 700 }[pace] || 1800;
     botTimer = setInterval(() => {
-      const ids = [...viewers.keys()].filter(id => id.startsWith('bot_')); if (!ids.length) return;
+      const ids = [...viewers.keys()].filter(id => String(id).startsWith('bot_')); if (!ids.length) return;
       const id = ids[Math.floor(Math.random() * ids.length)], v = viewers.get(id), r = Math.random();
       if (r < .62) onChat(id, v.name, BOT_LINES[Math.floor(Math.random() * BOT_LINES.length)]);
       else if (r < .9) broadcast({ t:'like', id, n: 1 + Math.floor(Math.random() * 4) });
@@ -238,7 +253,7 @@ function setBots(on, n, pace){
     }, every);
     addLog(`🤖 Bật ${n} bot, nhịp ${pace}`);
   } else {
-    for (const id of [...viewers.keys()]) if (id.startsWith('bot_')) { viewers.delete(id); broadcast({ t:'leave', id }); }
+    for (const id of [...viewers.keys()]) if (String(id).startsWith('bot_')) { viewers.delete(id); broadcast({ t:'leave', id }); }
     addLog('🤖 Tắt bot');
   }
   broadcast({ t:'bots', on }, 'control');
