@@ -171,20 +171,20 @@ function updateWorship(v, dt){
   switch (w.phase){
     case 'stand':  v.frame = anim ? 7-Math.min(3, Math.floor(w.t/.22)) : 7; if (w.t > .9){ w.phase='go'; w.t=0; } break;     // ngược động tác ngồi xuống
     case 'go':     if (walkPath(v, w, dt)){ w.phase='kneel'; w.t=0; v.flip=false; } break;
-    case 'kneel':  v.frame = anim ? 4+Math.min(3, Math.floor(w.t/.22)) : 7; if (w.t > .9){ w.phase='bow'; w.t=0; } break;
+    case 'kneel':  if (w.t > .85){ w.phase='bow'; w.t=0; } break;          // khung quỳ chọn trong kneelFrame()
     case 'bow':    v.frame = 7; w.bowT += dt;
       if (w.bowT >= BOW_CYCLE){ w.bowT = 0; w.done++; if (w.done >= w.bows){ w.phase='pray'; w.t=0; } }
       if (w.bowT < dt*1.5) { mo(); v.glow = Math.max(v.glow, .6); }            // tiếng mõ mỗi lạy
       break;
     case 'pray':   v.frame = 7; break;                                           // quỳ chờ hết lượt
-    case 'rise':   v.frame = anim ? 7-Math.min(3, Math.floor(w.t/.22)) : 7; if (w.t > .9){ w.phase='back'; w.t=0;
+    case 'rise':   if (w.t > .8){ w.phase='back'; w.t=0; v.frame=0;
       const s = v.seat || { x:540, y:1500 }, lx = w.path[0].x; w.path = [{x:lx, y:ALTAR_Y}, {x:lx, y:s.y}, {x:s.x, y:s.y}]; w.idx = 0; } break;
     case 'back':   if (walkPath(v, w, dt)){ v.w = null; v.state='sitting'; v.sitT=0; v.flip=false; v.bubble=null; } break;
   }
   if (w.end && ['bow','pray','kneel'].includes(w.phase)){ w.phase='rise'; w.t=0; v.bubble=null; }
 }
 // góc cúi khi lạy: 0 = thẳng, 1 = rạp hết
-function worshipBowAmount(v){ return 0; }     // dáng lạy nay vẽ bằng drawBackFigure
+function worshipBowAmount(v){ return 0; }     // dáng lạy vẽ bằng drawKneeler (ảnh nhân vật trong repo)
 
 /* ---- dáng quỳ lạy nhìn từ phía sau (vẽ bằng canvas) ----
    pose: 0 = đứng, 1 = quỳ; bend: 0 = thẳng lưng, 1 = cúi rạp đầu sát sàn */
@@ -195,58 +195,29 @@ function bowCurve(tt){ const e = x => x<.5 ? 2*x*x : 1-Math.pow(-2*x+2,2)/2;
   if (tt < .6) return e(tt/.6); if (tt < 1) return 1; if (tt < 1.6) return 1-e((tt-1)/.6); return 0; }
 function backPose(v){
   const w = v.w;
-  if (w.phase === 'kneel') return { pose: Math.min(1, w.t/.8), bend: 0 };
-  if (w.phase === 'bow')   return { pose: 1, bend: bowCurve(w.bowT) };
-  if (w.phase === 'rise')  return { pose: 1-Math.min(1, w.t/.7), bend: 0 };
-  return { pose: 1, bend: 0 };
+  return { bend: w.phase === 'bow' ? bowCurve(w.bowT) : 0 };
 }
-const ROBE = { man:'#c9d3e2', woman:'#e2cbe6', granny:'#8d6e52', monk:'#c98a3a', nun:'#9da3aa', child:'#d6a542', master:'#b8662a' };
-const HAIR = { man:'#1f1a17', woman:'#1b1512', granny:'#b9b3ab' };
 const lerp = (a, b, k) => a + (b-a)*k;
-function shade(hex, f){ const n = parseInt(hex.slice(1), 16); const c = x => Math.max(0, Math.min(255, Math.round(x*f))); return `rgb(${c(n>>16)},${c(n>>8&255)},${c(n&255)})`; }
-// trả về toạ độ y (cục bộ, đã nhân tỉ lệ) của đỉnh đầu để đặt bảng tên
-function drawBackFigure(skin, x, y, sc, pose, bend){
-  const robe = ROBE[skin] || ROBE.man, dark = shade(robe, .78), skinC = '#e8c29a', bald = !HAIR[skin];
-  ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc);
-  // bóng dưới đất
-  ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.beginPath(); ctx.ellipse(0, 2, lerp(48, 72, pose), 12, 0, 0, 6.29); ctx.fill();
-  const hipY = lerp(-118, -44, pose), W = lerp(84, 132, pose);
-  // vạt áo dưới: đứng là áo dài suông, quỳ thì xòe tròn trên sàn
-  ctx.fillStyle = dark; ctx.beginPath();
-  ctx.moveTo(-34, hipY); ctx.quadraticCurveTo(-W/2-4, hipY*.4, -W/2, -4); ctx.quadraticCurveTo(0, 6, W/2, -4); ctx.quadraticCurveTo(W/2+4, hipY*.4, 34, hipY); ctx.closePath(); ctx.fill();
-  // hai bàn chân lộ ra sau khi quỳ
-  if (pose > .4){ ctx.globalAlpha = Math.min(1, (pose-.4)/.4); ctx.fillStyle = '#f1dcc0';
-    for (const sx of [-1, 1]){ ctx.beginPath(); ctx.ellipse(sx*17, -5, 11, 7, sx*.25, 0, 6.29); ctx.fill(); }
-    ctx.globalAlpha = 1; }
-  // thân: cúi về trước thì lưng ngắn lại và tròn ra (nhìn từ sau)
-  const L = 108, Lp = L*(1 - .72*bend), shY = hipY - Lp, sw = lerp(38, 46, bend);
-  // đầu: thấp dần rồi khuất sau lưng khi cúi rạp
-  const headY = shY - lerp(22, -26, bend), hr = 23;
-  // đầu mờ dần rồi khuất hẳn khi cúi rạp (không lòi xuống dưới vạt áo)
-  ctx.globalAlpha = 1 - Math.max(0, Math.min(1, (bend - .45) / .35));
-  ctx.fillStyle = bald ? skinC : HAIR[skin];
-  ctx.beginPath(); ctx.arc(0, headY, hr, 0, 6.29); ctx.fill();
-  if (bald){ ctx.fillStyle = shade(skinC, .9); for (const sx of [-1, 1]){ ctx.beginPath(); ctx.ellipse(sx*hr, headY+2, 4, 7, 0, 0, 6.29); ctx.fill(); } }
-  else if (skin === 'woman' || skin === 'granny'){ ctx.beginPath(); ctx.arc(0, headY - hr*.55, 11, 0, 6.29); ctx.fill(); }   // búi tóc
-  ctx.globalAlpha = 1;
-  // lưng áo
-  ctx.fillStyle = robe; ctx.beginPath();
-  ctx.moveTo(-36, hipY); ctx.lineTo(-sw, shY + 16); ctx.quadraticCurveTo(-sw+2, shY - 4 - 10*bend, 0, shY - 8 - 12*bend);
-  ctx.quadraticCurveTo(sw-2, shY - 4 - 10*bend, sw, shY + 16); ctx.lineTo(36, hipY); ctx.closePath(); ctx.fill();
-  // tay áo hai bên
-  ctx.fillStyle = shade(robe, .92);
-  for (const sx of [-1, 1]){ ctx.beginPath(); ctx.ellipse(sx*(sw+4), shY + 20 + 10*bend, 9, lerp(30, 18, bend), sx*.15, 0, 6.29); ctx.fill(); }
-  // đường may giữa lưng; áo sư / ni thêm vạt chéo
-  ctx.strokeStyle = dark; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(0, shY - 4); ctx.lineTo(0, hipY - 4); ctx.stroke();
-  if (['monk', 'master', 'nun'].includes(skin)){ ctx.lineWidth = 6; ctx.strokeStyle = shade(robe, 1.15); ctx.beginPath(); ctx.moveTo(-sw+6, shY + 10); ctx.lineTo(28, hipY - 6); ctx.stroke(); }
-  // tóc dài phủ lưng (nữ) khi chưa cúi rạp
-  if (skin === 'woman' && bend < .6){ ctx.globalAlpha = 1 - bend/.6; ctx.fillStyle = HAIR.woman;
-    ctx.beginPath(); ctx.moveTo(-14, headY); ctx.quadraticCurveTo(-18, shY + 40, -8, shY + 62); ctx.lineTo(8, shY + 62); ctx.quadraticCurveTo(18, shY + 40, 14, headY); ctx.fill(); ctx.globalAlpha = 1; }
-  // đai lưng
-  ctx.fillStyle = dark; ctx.fillRect(-36, hipY - 6, 72, 6);
+// Khung quỳ trong bộ ảnh động (nam / nữ / bà): 4 = đặt chân lên bồ đoàn, 5 = đang quỳ xuống, 6 = quỳ ngay ngắn
+function kneelFrame(w){
+  if (w.phase === 'kneel') return w.t < .27 ? 4 : w.t < .54 ? 5 : 6;
+  if (w.phase === 'rise')  return w.t < .25 ? 6 : w.t < .5 ? 5 : 4;
+  return 6;
+}
+// Vẽ người quỳ lạy bằng chính ảnh nhân vật trong repo (nhân vật vốn nhìn từ phía sau).
+// Lạy = cắt ảnh ở ngang hông, phần thân trên co dần về phía hông: nhìn từ sau trông như cúi rạp về phía tượng Phật.
+// Trả về khoảng cách từ mặt đất tới đỉnh đầu (đã nhân tỉ lệ) để đặt bảng tên.
+function drawKneeler(v, sc, bend){
+  let img, sx = 0, sw, sh, pivot, k;
+  if (hasAnim(v.skin)){ const a = ANIM[v.skin]; img = A['anim_'+v.skin]; sx = kneelFrame(v.w)*a.fw; sw = a.fw; sh = a.fh; pivot = .74; k = sc*260/a.seatH; }
+  else { img = A[v.skin==='master'?'monk':v.skin] || A.man; if (!img.naturalWidth) return 0; sw = img.naturalWidth; sh = img.naturalHeight; pivot = .8; k = sc; }
+  const W = sw*k, H = sh*k, py = -H*(1-pivot);          // py: đường ngang hông (gốc toạ độ ở mặt đất)
+  const f = 1 - .58*bend, wx = 1 + .07*bend;           // thân trên co lại, hơi bè ra khi cúi
+  ctx.save(); ctx.translate(v.x, v.y);
+  ctx.drawImage(img, sx, sh*pivot, sw, sh*(1-pivot), -W/2, py, W, H*(1-pivot));                  // nửa dưới: chân, bồ đoàn
+  ctx.drawImage(img, sx, 0, sw, sh*pivot + 1, -W*wx/2, py - H*pivot*f, W*wx, H*pivot*f + 1);     // nửa trên: thân, đầu
   ctx.restore();
-  return (Math.min(headY - hr, shY - 16)) * sc;
+  return H*(1-pivot) + H*pivot*f*.9;
 }
 
 /* ---- camera cận cảnh ---- */
@@ -264,7 +235,7 @@ function drawWorshipCard(v, p, t){
   const lines = []; let cur = '';
   for (const word of text.split(/\s+/)){ const tryL = cur ? cur + ' ' + word : word; if (ctx.measureText(tryL).width > 700 && cur){ lines.push(cur); cur = word; } else cur = tryL; }
   if (cur) lines.push(cur); if (lines.length > 2){ lines.length = 2; lines[1] = lines[1].replace(/\s*\S*$/, '') + '…'; }
-  const cw = Math.min(820, Math.max(420, ...lines.map(l => ctx.measureText(l).width)) + 90), ch = 64 + lines.length*54, cx = 540 - cw/2, cy = 600;
+  const cw = Math.min(820, Math.max(420, ...lines.map(l => ctx.measureText(l).width)) + 90), ch = 64 + lines.length*54, cx = 540 - cw/2, cy = 545;
   const cg = ctx.createLinearGradient(0, cy, 0, cy + ch); cg.addColorStop(0, 'rgba(255,236,170,.97)'); cg.addColorStop(1, 'rgba(232,186,92,.97)');
   ctx.shadowColor = 'rgba(255,200,90,.6)'; ctx.shadowBlur = 30; ctx.fillStyle = cg; rr(cx, cy, cw, ch, 22); ctx.fill(); ctx.shadowBlur = 0;
   ctx.lineWidth = 3; ctx.strokeStyle = '#8a4b10'; ctx.stroke();
@@ -444,12 +415,12 @@ function frame(now){
     ctx.save(); ctx.globalAlpha=v.fade; ctx.translate(v.x,v.y); if (bowK) ctx.transform(1,0,0,1-bowK,0,0);
     let topY;
     const backView = v.w && BACK_PHASES.includes(v.w.phase);
-    if (backView){ ctx.restore(); ctx.save(); ctx.globalAlpha=v.fade; const bp = backPose(v), zs = v.w.zoom ? 1 + .75*ek : 1; topY = -drawBackFigure(v.skin, v.x, v.y, ws*1.05*zs, bp.pose, bp.bend); }
+    if (backView){ ctx.restore(); ctx.save(); ctx.globalAlpha=v.fade; const zs = v.w.zoom ? 1 + .55*ek : 1; topY = drawKneeler(v, ws*1.05*zs, backPose(v).bend); }
     else if (anim){ const a=ANIM[v.skin], k=ws*1.05*260/a.seatH; if (v.flip) ctx.scale(-1,1); ctx.drawImage(A['anim_'+v.skin], v.frame*a.fw,0,a.fw,a.fh, -a.fw*k/2, -a.fh*k+breathe, a.fw*k, a.fh*k); topY=((v.state==='sit'||(v.w&&v.frame===7))?a.seatH:a.fh*.97)*k*(1-bowK); }
     else { const sk = v.skin==='master'?'monk':v.skin; sprite(A[sk]||A.man,0,breathe,ws*1.05); topY=260*ws; }
     ctx.restore();
     const ty=v.y-topY-14*ws/.4;
-    if (v.w?.zoom && backView && cam.p > .3){ tag(v.name, v.x, v.y-topY-34, ws*.9, 'gold', avatar(v.avatar), 0); continue; }
+    if (v.w?.zoom && backView && cam.p > .3) continue;     // cận cảnh: tên đã hiện trên thẻ lời cầu
     tag(v.name, v.x, ty, ws, v.skin==='master'||v.coins>=99||v.w?'gold':'', avatar(v.avatar), v.state==='sit' ? v.seat?.gap : 0);
     if (v.bubble && now<v.bubble.until) bubbles.push([v.bubble.text, v.x, ty-Math.max(18,30*ws/.4), ws]); else v.bubble=null;
   }
