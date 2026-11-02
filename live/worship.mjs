@@ -35,7 +35,7 @@ export class WorshipQueue {
     // chỉ tính thời gian chờ với người đã lạy xong ít nhất một lần
     if (this.cooldownSec > 0 && this.lastDone.has(entry.id) && now - this.lastDone.get(entry.id) < this.cooldownSec * 1000) return 'cooldown';
     if (this.queue.length >= this.maxQueue) return 'full';
-    this.queue.push({ id: entry.id, name: entry.name || '', text: String(entry.text || '').slice(0, 120) });
+    this.queue.push({ id: entry.id, name: entry.name || '', text: String(entry.text || '').slice(0, 120), sub: String(entry.sub || '').slice(0, 80) });
     return 'queued';
   }
   // người rời phòng thì bỏ khỏi hàng / chỗ lạy

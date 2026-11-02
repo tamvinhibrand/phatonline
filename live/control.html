@@ -126,10 +126,11 @@ button.red{background:var(--red);border-color:#b84a33}
     <label>Từ khóa (cách nhau bằng dấu phẩy, bình luận chứa một từ là được)<input id="worshipKeywords" value="lạy, bái, lễ Phật, được"></label>
     <div class="row">
       <label>Quà tối thiểu (💎)<input id="worshipMinDiamonds" type="number" min="1" value="1"></label>
-      <label>Số chỗ lạy<input id="worshipSlots" type="number" min="1" max="5" value="3"></label>
+      <label>Số chỗ lạy (khi tắt cận cảnh)<input id="worshipSlots" type="number" min="1" max="5" value="3"></label>
       <label>Số lần lạy<input id="worshipBows" type="number" min="1" max="9" value="3"></label>
     </div>
     <label>Chờ giữa 2 lần lên bái của cùng 1 người (giây, 0 = không chờ)<input id="worshipCooldown" type="number" min="0" max="3600" value="0"></label>
+    <label class="check"><input type="checkbox" id="worshipZoom" checked> Cận cảnh trước chánh điện khi lạy (mỗi lượt 1 người, người sau chờ)</label>
     <label class="check"><input type="checkbox" id="worshipAnnounce"> Giọng đọc "Phật tử … lên lễ Phật"</label>
     <div class="row tight"><button class="gold" id="btnWorship">🙏 Thử lên bái</button><button id="btnWorship5">Thử 5 người cùng lúc</button></div>
     <p class="hint">Từ khóa có dấu thì so có dấu ("lạy" không khớp "lấy"); gõ không dấu ("lay") thì khớp cả hai.</p>
@@ -147,7 +148,7 @@ const $ = id => document.getElementById(id);
 let ws = null;
 const send = (cmd, extra={}) => ws?.readyState===1 && ws.send(JSON.stringify({ t:'ctl', cmd, ...extra }));
 function logLine(s){ const el=$('log'); el.textContent += s + '\n'; el.scrollTop = el.scrollHeight; }
-const SETTING_IDS = ['worshipMode','worshipKeywords','worshipMinDiamonds','worshipSlots','worshipBows','worshipCooldown','worshipAnnounce','voice','pitch','rate','music','mo','autoChant','moBpm','chantEveryMin','title','subtitle','seatMode','joinOnEnter'];
+const SETTING_IDS = ['worshipZoom','worshipMode','worshipKeywords','worshipMinDiamonds','worshipSlots','worshipBows','worshipCooldown','worshipAnnounce','voice','pitch','rate','music','mo','autoChant','moBpm','chantEveryMin','title','subtitle','seatMode','joinOnEnter'];
 function fillSettings(s){ for (const k of SETTING_IDS){ const el=$(k); if (!el || s[k]===undefined) continue; if (el.type==='checkbox') el.checked=!!s[k]; else el.value=s[k]; } }
 function readSettings(){ const o={}; for (const k of SETTING_IDS){ const el=$(k); o[k] = el.type==='checkbox' ? el.checked : el.type==='number' ? +el.value : el.value; } return o; }
 const people = new Map();

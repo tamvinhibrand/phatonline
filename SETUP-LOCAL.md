@@ -67,7 +67,9 @@ Lấy thêm cập nhật từ tác giả gốc (có thể xung đột ở `live/
 
 Người xem bình luận **chứa** từ khóa (mặc định: `lạy, bái, lễ Phật, được`) hoặc tặng quà đủ ngưỡng thì nhân vật đứng dậy, đi lên trước chánh điện, quỳ lạy 3 lần, bình luận hiện trên đầu, lạy xong quay về chỗ ngồi.
 
-- Trước chánh điện có 3 chỗ lạy. Đông người thì xếp hàng (tối đa 10), người lạy xong đi xuống là người kế tiếp lên ngay.
+- **Cận cảnh (mặc định bật):** khi người lạy bắt đầu quỳ, khung hình phóng to vào trước chánh điện, nhân vật quay lưng về phía người xem, quỳ rồi cúi rạp lạy. Lời cầu hiện trên thẻ vàng lớn, cánh hoa rơi, hai thẻ hai bên tạm ẩn. Lạy xong thì thu về cảnh rộng. Mỗi lượt 1 người, người sau chờ.
+- Tắt cận cảnh thì trước chánh điện có 3 chỗ lạy (chỉnh được 1–5), bình luận hiện trên đầu.
+- Đông người thì xếp hàng (tối đa 10), người lạy xong đi xuống là người kế tiếp lên ngay.
 - Một người không xếp hàng hai lần cùng lúc, nên bình luận từ khóa liên tục cũng chỉ được tính một lượt.
 - Lên bái nhờ quà thì hiện bình luận gần nhất của người đó (trong 90 giây), chưa có thì hiện "dâng [tên quà]".
 - Từ khóa có dấu thì so có dấu ("lạy" không khớp "lấy"), gõ không dấu ("lay") thì khớp cả hai.

@@ -40,6 +40,7 @@ const settings = {
   worshipBows: 3,                    // số lần lạy
   worshipCooldown: 0,                // giây chờ giữa 2 lần lên bái của cùng 1 người, 0 = không chờ
   worshipAnnounce: false,            // giọng đọc: Phật tử ... lên lễ Phật
+  worshipZoom: true,                 // cận cảnh trước chánh điện khi lạy; bật thì mỗi lượt 1 người
 };
 const viewers = new Map();           // id -> { id, name, skin, avatar, coins, joinedAt, lastAt, lastText, lastTextAt, demo }
 const startedAt = Date.now();
@@ -96,7 +97,7 @@ function onChat(id, name, text, avatar){
   if (!isNew && want && want !== v.skin){ v.skin = want; broadcast({ t:'skin', id, skin: want }); }
   v.lastText = text; v.lastTextAt = Date.now();
   broadcast({ t:'chat', id, name: v.name, text });
-  if (['both', 'comment'].includes(settings.worshipMode) && matchKeyword(text, parseKeywords(settings.worshipKeywords))) requestWorship(v, text);
+  if (['both', 'comment'].includes(settings.worshipMode) && matchKeyword(text, parseKeywords(settings.worshipKeywords))) requestWorship(v, text, `${v.name} lên lễ Phật`);
 }
 
 function onGift(id, name, giftName, count, diamonds, avatar){
@@ -111,15 +112,16 @@ function onGift(id, name, giftName, count, diamonds, avatar){
   broadcast({ t:'gift', id, name: v.name, giftName, count, coins, total: v.coins, tier, prayer });
   if (settings.gifts.readAll || coins >= settings.gifts.minDiamonds) say(line, { tag:'gift', id });
   if (['both', 'gift'].includes(settings.worshipMode) && coins >= settings.worshipMinDiamonds)
-    requestWorship(v, (v.lastText && Date.now() - v.lastTextAt < 90_000) ? v.lastText : `dâng ${giftName}`);
+    requestWorship(v, prayer, `${v.name} dâng ${giftName}${count > 1 ? ' ×' + count : ''}`);
 }
 
 /* ------------------------------------------------------------ lên bái */
 // Thời gian một lượt ở chỗ lạy: đi lên (~5 giây) + mỗi lần lạy 2,4 giây. Hết lượt thì người kế tiếp lên ngay.
 const worshipMs = () => 5000 + settings.worshipBows * 2400;
-const worship = new WorshipQueue({ slots: settings.worshipSlots, cooldownSec: settings.worshipCooldown, durationMs: worshipMs() });
-function requestWorship(v, text){
-  const r = worship.request({ id: v.id, name: v.name, text });
+const worshipSlotCount = () => settings.worshipZoom ? 1 : settings.worshipSlots;     // cận cảnh: từng người một
+const worship = new WorshipQueue({ slots: worshipSlotCount(), cooldownSec: settings.worshipCooldown, durationMs: worshipMs() });
+function requestWorship(v, text, sub){
+  const r = worship.request({ id: v.id, name: v.name, text, sub });
   if (r === 'full') addLog('Hàng lên bái đã đủ 10 người, bỏ qua ' + v.name);
 }
 setInterval(() => {
@@ -127,7 +129,7 @@ setInterval(() => {
   for (const e of ended) broadcast({ t:'worshipEnd', id: e.id });
   for (const s of started){
     const v = viewers.get(s.id); if (!v){ worship.remove(s.id); continue; }
-    broadcast({ t:'worship', id: s.id, slot: s.slot, slots: worship.slots.length, text: s.text, bows: settings.worshipBows, ms: worship.durationMs });
+    broadcast({ t:'worship', id: s.id, slot: s.slot, slots: worship.slots.length, text: s.text, sub: s.sub, name: v.name, zoom: settings.worshipZoom, bows: settings.worshipBows, ms: worship.durationMs });
     addLog(`🙏 ${v.name} lên lễ Phật`);
     if (settings.worshipAnnounce) say(`Phật tử ${spoken(v.name)} lên lễ Phật.`, { tag:'worship', id: s.id });
   }
@@ -245,7 +247,7 @@ function onControl(m){
     case 'say': if (m.text) say(String(m.text).slice(0, 400), { tag:'say' }); break;
     case 'settings':
       applySettings(m.settings || {});
-      worship.resize(settings.worshipSlots); worship.cooldownSec = settings.worshipCooldown; worship.durationMs = worshipMs();
+      worship.resize(worshipSlotCount()); worship.cooldownSec = settings.worshipCooldown; worship.durationMs = worshipMs();
       scheduleChant(); broadcast({ t:'settings', settings, cap: capacity() }); break;
     case 'bots': setBots(!!m.on, +m.n || 12, m.pace); break;
   }
@@ -260,7 +262,7 @@ const SETTING_RULES = {
   worshipMode: v => ['both', 'comment', 'gift', 'off'].includes(v) ? v : settings.worshipMode,
   worshipKeywords: v => parseKeywords(v).join(', '),
   worshipMinDiamonds: v => clamp(v, 1, 50000), worshipSlots: v => clamp(v, 1, 5), worshipBows: v => clamp(v, 1, 9),
-  worshipCooldown: v => clamp(v, 0, 3600), worshipAnnounce: Boolean,
+  worshipCooldown: v => clamp(v, 0, 3600), worshipAnnounce: Boolean, worshipZoom: Boolean,
   seatMode: v => ['auto', '24', '36', '64', '100'].includes(String(v)) ? String(v) : 'auto',
 };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, Math.round(+v || 0)));
