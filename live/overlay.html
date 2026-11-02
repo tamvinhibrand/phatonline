@@ -104,7 +104,7 @@ function avatar(url){ if(!url) return null; let im=avatars.get(url); if(!im){ im
 
 /* ======================= seats ======================= */
 // Floor trapezoid in the painting: back row just below the altar, front row near the bottom.
-const FLOOR = { yTop: 1215, yBot: 1845, halfTop: 290, halfBot: 430 };
+const FLOOR = { yTop: 1300, yBot: 1845, halfTop: 290, halfBot: 430 };
 const GRID = { 24:[6,4], 36:[6,6], 64:[8,8], 100:[10,10] };
 let cap = 24, seats = [];
 function layout(c){
@@ -133,7 +133,8 @@ function reseat(){
 document.getElementById('count').textContent = '0/24';
 
 /* the three fixed teachers in front of the altar */
-const TEACHERS = [ { name:'Thầy Minh Đạo', skin:'monk', x:300, y:1085, s:.36 }, { name:'Sư Trụ Trì', skin:'monk', x:540, y:1100, s:.4, master:true }, { name:'Thầy Tâm Từ', skin:'monk', x:780, y:1085, s:.36 } ];
+// ba vị thầy ngồi trên sàn ngay trước bàn thờ (sàn bắt đầu ở y ≈ 1165 trong ảnh nền)
+const TEACHERS = [ { name:'Thầy Minh Đạo', skin:'monk', x:300, y:1192, s:.38 }, { name:'Sư Trụ Trì', skin:'monk', x:540, y:1198, s:.42, master:true }, { name:'Thầy Tâm Từ', skin:'monk', x:780, y:1192, s:.38 } ];
 
 function addVisitor(p, instant){
   if (visitors.has(p.id)) { Object.assign(visitors.get(p.id), { name:p.name, skin:p.skin, avatar:p.avatar, coins:p.coins }); return; }
@@ -146,8 +147,8 @@ function removeVisitor(id){ visitors.delete(id); reseat(); }
 /* ======================= lên bái ======================= */
 // Chỗ lạy ở lối giữa, ngay dưới ba vị thầy. Nhân vật: đứng dậy → đi ra lối giữa → đi lên → vào chỗ lạy → quỳ → lạy N lần
 // → chờ server báo hết lượt → đứng dậy → đi về theo lối giữa → ngồi lại chỗ cũ.
-const ALTAR_Y = 1212;
-const altarX = (slot, n) => 540 + (slot - (n-1)/2) * 150;
+const ALTAR_Y = 1292;                                          // chỗ quỳ: lối giữa, sau lưng ba vị thầy
+const altarX = (slot, n) => 540 + (slot - (n-1)/2) * 120;
 const aisleX = (slot, n) => 540 + (slot - (n-1)/2) * 22;     // mỗi chỗ đi một làn hơi lệch để không đè nhau
 function startWorship(m){
   const v = visitors.get(m.id); if (!v) return;
@@ -382,7 +383,7 @@ function frame(now){
   const zv = zoomTarget(); if (zv) cam.fx = zv.w.slotX;
   cam.p += ((zv ? 1 : 0) - cam.p) * Math.min(1, dt*2.2); if (cam.p < .002) cam.p = 0;
   const ek = cam.p*cam.p*(3-2*cam.p), zk = 1 + .9*ek;
-  ctx.save(); ctx.translate(540, 960); ctx.scale(zk, zk); ctx.translate(-lerp(540, cam.fx, ek), -lerp(960, 1120, ek));
+  ctx.save(); ctx.translate(540, 960); ctx.scale(zk, zk); ctx.translate(-lerp(540, cam.fx, ek), -lerp(960, 1190, ek));
   stage.classList.toggle('zoomed', cam.p > .3);
   if (A.hall.naturalWidth) ctx.drawImage(A.hall,0,0,1080,1920);
   // light: halo pulse behind the Buddha, candle flicker, incense smoke
@@ -392,7 +393,7 @@ function frame(now){
   ctx.save(); ctx.fillStyle='#efe3cc'; for (let i=0;i<16;i++){ const a=(t*.08+i*.0625)%1; ctx.globalAlpha=.28*(1-a); ctx.beginPath(); ctx.arc(540+Math.sin(a*7+i)*20*a, 1000-a*280, 4+a*15, 0, 6.28); ctx.fill(); } ctx.restore();
   // teachers
   for (const tc of TEACHERS){ if (tc.master){ ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=.35+.1*Math.sin(t*1.5); sprite(A.halo,tc.x,tc.y-120,.9,.5); ctx.restore(); }
-    sprite(A[tc.skin],tc.x,tc.y,tc.s); tag(tc.name,tc.x,tc.y-tc.s*260-22,tc.s,'gold'); }
+    sprite(A[tc.skin],tc.x,tc.y,tc.s); ctx.save(); ctx.globalAlpha=1-cam.p; tag(tc.name,tc.x,tc.y-tc.s*260-22,tc.s,'gold'); ctx.restore(); }   // cận cảnh: ẩn tên các thầy cho thẻ lời cầu
   // visitors back to front
   const bubbles=[];
   const list=[...visitors.values()].sort((a,b)=>a.y-b.y);
