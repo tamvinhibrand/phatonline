@@ -9,15 +9,6 @@ Mã nguồn chia sẻ miễn phí (MIT). Có hai phần:
 | `index.html`, `assets/` | Bản web tĩnh cho mọi người tự vào ngồi tụng (đăng lên Cloudflare Pages) |
 | `live/` | Bộ công cụ phát LIVE: server Node, overlay 9:16, bảng điều khiển |
 
-## Bản fork của Kêvin dev
-
-Đây là bản fork từ [kentjuno/chanh-dien-online](https://github.com/kentjuno/chanh-dien-online) của tác giả **Kent Juno**. Bản này mình (**Kêvin dev**) đã sửa, fix lại rất nhiều lỗi để chạy được với TikTok LIVE hiện tại:
-
-- **Không kết nối được phòng live** ("This endpoint requires a Business plan"): tắt `enableExtendedGiftInfo`, vốn bắt thư viện xin chữ ký Euler Stream gói trả phí. Tên quà và số kim cương vẫn lấy được từ dữ liệu từng lượt tặng.
-- **Người bình luận không được vào chỗ / server sập** (`Cannot read properties of undefined (reading 'startsWith')`): `tiktok-live-connector` 2.5 đổi tên trường dữ liệu (`user.displayId`, `user.id`, bình luận ở `content`, quà ở `gift`). Server đọc được cả tên mới lẫn tên cũ, và không xếp chỗ cho người thiếu ID.
-- **Quà tặng đọc sai**: tên quà luôn là "quà", mỗi quà chỉ tính 1 kim cương, quà combo bị cộng lặp. Đã đọc đúng `gift.name`, `gift.diamondCount`, `gift.type`.
-- **Tên bot**: thay chữ "·bot" bằng biểu tượng 🙏 (giọng đọc tự bỏ qua, không đọc thành "bot").
-
 Hướng dẫn chạy trên Windows với Laragon + Git Bash: xem [`SETUP-LOCAL.md`](SETUP-LOCAL.md).
 
 ## Chạy bộ LIVE trên máy phát
@@ -95,8 +86,6 @@ Bản fork này chia sẻ miễn phí. Nếu thấy hữu ích và muốn ủng 
 ![QR chuyển khoản VietComBank](https://img.vietqr.io/image/VCB-0531002524293-compact2.svg?amount=50000&addInfo=ung+ho+chanh+dien+online&accountName=PHAM+DUY+TAM+VINH)
 
 Xin cảm ơn và chúc bạn thân tâm an lạc. Nam mô A Di Đà Phật.
-
-Mã nguồn gốc do **Kent Juno** viết. Muốn ủng hộ tác giả gốc, xem [kentjuno/chanh-dien-online](https://github.com/kentjuno/chanh-dien-online).
 
 ## Giấy phép
 
