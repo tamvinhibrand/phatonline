@@ -97,6 +97,10 @@ const IMG = { hall:'/assets/hall.jpg', monk:'/assets/c_monk.png', nun:'/assets/c
   woman:'/assets/c_woman.png', child:'/assets/c_child.png', anim_man:'/assets/anim_man.png', anim_woman:'/assets/anim_woman.png', anim_granny:'/assets/anim_granny.png',
   lotus:'/assets/fx_lotus.png', halo:'/assets/fx_halo.png', bell:'/assets/fx_bell.png', incense:'/assets/fx_incense.png', petal:'/assets/fx_petal.png' };
 for (const [k,src] of Object.entries(IMG)){ const im=new Image(); im.src=src; A[k]=im; }
+// ảnh lên bái: quỳ chắp tay (up) và cúi rạp (bow); nhân vật nào thiếu ảnh thì dùng cách cúi bằng ảnh gốc
+const PRAY_SKINS = ['man', 'woman', 'granny', 'nun', 'child'];
+for (const k of PRAY_SKINS) for (const p of ['up', 'bow']){ const im=new Image(); im.src=`/assets/pray_${k}_${p}.png`; A[`pray_${k}_${p}`]=im; }
+const hasPray = skin => A[`pray_${skin}_up`]?.naturalWidth > 0 && A[`pray_${skin}_bow`]?.naturalWidth > 0;
 const ANIM = { man:{fw:212,fh:300,seatH:210}, woman:{fw:212,fh:300,seatH:220}, granny:{fw:195,fh:300,seatH:222} };
 const hasAnim = k => ANIM[k] && A['anim_'+k]?.naturalWidth > 0;
 const avatars = new Map();
@@ -194,10 +198,9 @@ const BACK_PHASES = ['kneel', 'bow', 'pray', 'rise'];
 // một chu kỳ lạy (2,2s): giơ tay chắp lên đầu 0,35s · cúi rạp 0,6s · giữ 0,35s · ngẩng lên 0,6s · hạ tay 0,3s
 const ease = x => x<.5 ? 2*x*x : 1-Math.pow(-2*x+2,2)/2;
 function bowCurve(tt){ if (tt < .35) return 0; if (tt < .95) return ease((tt-.35)/.6); if (tt < 1.3) return 1; if (tt < 1.9) return 1-ease((tt-1.3)/.6); return 0; }
-function handsCurve(tt){ if (tt < .35) return ease(tt/.35); if (tt < 1.9) return 1; return 1-ease(Math.min(1,(tt-1.9)/.3)); }
 function backPose(v){
   const w = v.w;
-  return w.phase === 'bow' ? { bend: bowCurve(w.bowT), hands: handsCurve(w.bowT) } : { bend: 0, hands: 0 };
+  return { bend: w.phase === 'bow' ? bowCurve(w.bowT) : 0 };
 }
 const lerp = (a, b, k) => a + (b-a)*k;
 // Khung quỳ trong bộ ảnh động (nam / nữ / bà): 4 = đặt chân lên bồ đoàn, 5 = đang quỳ xuống, 6 = quỳ ngay ngắn
@@ -209,34 +212,34 @@ function kneelFrame(w){
 // Vẽ người quỳ lạy bằng chính ảnh nhân vật trong repo (nhân vật vốn nhìn từ phía sau).
 // Lạy = cắt ảnh ở ngang hông, phần thân trên co dần về phía hông: nhìn từ sau trông như cúi rạp về phía tượng Phật.
 // Trả về khoảng cách từ mặt đất tới đỉnh đầu (đã nhân tỉ lệ) để đặt bảng tên.
-// màu tay áo lấy từ ảnh nhân vật (áo xám / nâu / nâu sẫm), màu da tay
-const SLEEVE = { man:'#8a8c95', woman:'#8a8c95', nun:'#8a8c95', child:'#8a8c95', granny:'#7a4524', monk:'#7a3c1a', master:'#7a3c1a' };
-const SKIN_HAND = '#e8c09a';
-// Vị trí đầu và vai đo trên ảnh nhân vật (tỉ lệ theo phần thân trên của ảnh): cx = tâm đầu theo chiều ngang khung ảnh,
-// head = đỉnh đầu, sh = ngang vai, shw = nửa bề rộng vai. Bộ ảnh động nghiêng nhẹ nên đầu lệch phải.
-const BODY = { woman:{cx:.60, head:.23, sh:.62, shw:.13}, man:{cx:.62, head:.25, sh:.57, shw:.14}, granny:{cx:.55, head:.28, sh:.64, shw:.14},
-  monk:{cx:.45, head:.01, sh:.39, shw:.19}, master:{cx:.45, head:.01, sh:.39, shw:.19}, nun:{cx:.44, head:.01, sh:.46, shw:.19}, child:{cx:.48, head:.02, sh:.45, shw:.2} };
-// Hai tay giơ lên chắp trên đầu. h: 0 = tay buông, 1 = chắp trên đỉnh đầu. Nhìn từ sau nên thấy tay áo và hai bàn tay úp vào nhau.
-function drawPrayerHands(skin, W, H, topY, upperH, h, alpha){
-  if (h <= 0 || alpha <= 0) return;
-  const b = BODY[skin] || BODY.man, sleeve = SLEEVE[skin] || SLEEVE.man;
-  const cx = W*(b.cx - .5), headTop = topY + upperH*b.head, shY = topY + upperH*b.sh, shX = W*b.shw;
-  const wristUp = { x: W*.015, y: headTop - H*.03 }, wristDown = { x: shX*.8, y: shY + H*.12 };
-  const wx = lerp(wristDown.x, wristUp.x, h), wy = lerp(wristDown.y, wristUp.y, h);
-  const ex = shX*.95, ey = lerp(shY + H*.05, headTop + (shY - headTop)*.45, h);             // khuỷu tay khép sát đầu, ngang tai
-  ctx.save(); ctx.translate(cx, 0); ctx.globalAlpha *= alpha * Math.min(1, h*1.8); ctx.lineCap = 'round'; ctx.lineJoin = 'round';   // hạ tay: mờ dần
-  for (const pass of [0, 1]){                                                            // viền tối rồi màu tay áo
-    ctx.strokeStyle = pass ? sleeve : 'rgba(40,30,25,.55)'; ctx.lineWidth = W*(pass ? .05 : .065);
-    for (const sx of [-1, 1]){ ctx.beginPath(); ctx.moveTo(sx*shX*.85, shY); ctx.quadraticCurveTo(sx*ex, ey, sx*wx, wy); ctx.stroke(); }
-  }
-  // hai bàn tay úp vào nhau, ngón tay chỉ lên
-  const hx = lerp(W*.06, 0, h), hy = wy - H*.022;
-  ctx.fillStyle = SKIN_HAND; ctx.strokeStyle = 'rgba(90,50,30,.6)'; ctx.lineWidth = Math.max(1, W*.007);
-  for (const sx of (h > .85 ? [0] : [-1, 1])){ ctx.beginPath(); ctx.ellipse(sx*hx, hy, W*(h > .85 ? .026 : .018), H*.032, 0, 0, 6.29); ctx.fill(); ctx.stroke(); }
-  if (h > .85){ ctx.beginPath(); ctx.moveTo(0, hy - H*.027); ctx.lineTo(0, hy + H*.026); ctx.stroke(); }                   // khe giữa hai bàn tay
-  ctx.restore();
+// chuyển mượt giữa hai ảnh: phần lớn thời gian hiện rõ một ảnh, chỉ hoà vào nhau ở khoảng giữa để đỡ bóng mờ
+const cross = x => { x = Math.max(0, Math.min(1, (x - .3)/.4)); return x*x*(3-2*x); };
+const PRAY_PX = 291/520;            // ảnh chắp tay của nam cao 520px ≈ chiều cao người quỳ trong bộ ảnh gốc
+// Trọng số của 3 ảnh theo động tác: base = khung quỳ gốc, up = chắp tay, bow = cúi rạp
+function prayWeights(w){
+  if (w.phase === 'kneel'){ const u = cross((w.t - .45)/.4); return { base: 1-u, up: u, bow: 0 }; }
+  // giữa các lần lạy vẫn giữ tay chắp, không hạ tay về khung quỳ gốc
+  if (w.phase === 'bow'){ const b = cross(bowCurve(w.bowT)); return { base: 0, up: 1-b, bow: b }; }
+  if (w.phase === 'rise'){ const u = 1 - cross(w.t/.3); return { base: 1-u, up: u, bow: 0 }; }
+  return { base: 0, up: 1, bow: 0 };                     // quỳ chắp tay chờ hết lượt
 }
-function drawKneeler(v, sc, bend, hands = 0){
+function drawPrayImg(img, v, sc, alpha){
+  if (alpha <= .002) return 0;
+  const w = img.naturalWidth*sc*PRAY_PX, h = img.naturalHeight*sc*PRAY_PX;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.drawImage(img, v.x - w/2, v.y - h, w, h); ctx.restore();
+  return h;
+}
+// Người lên bái có ảnh riêng: quỳ (khung gốc) → chắp tay → cúi rạp → chắp tay → hạ tay
+function drawPrayer(v, sc){
+  const wt = prayWeights(v.w);
+  let top = 0;
+  if (wt.base > .002){ ctx.save(); ctx.globalAlpha *= wt.base; top = drawKneeler(v, sc, 0); ctx.restore(); }
+  top = Math.max(top, drawPrayImg(A[`pray_${v.skin}_up`], v, sc, wt.up));
+  const hb = drawPrayImg(A[`pray_${v.skin}_bow`], v, sc, wt.bow);
+  if (wt.bow > .5) top = hb;                              // cúi rạp thì đỉnh đầu thấp xuống
+  return top;
+}
+function drawKneeler(v, sc, bend){
   let img, sx = 0, sw, sh, pivot, k;
   if (hasAnim(v.skin)){ const a = ANIM[v.skin]; img = A['anim_'+v.skin]; sx = kneelFrame(v.w)*a.fw; sw = a.fw; sh = a.fh; pivot = .74; k = sc*260/a.seatH; }
   else { img = A[v.skin==='master'?'monk':v.skin] || A.man; if (!img.naturalWidth) return 0; sw = img.naturalWidth; sh = img.naturalHeight; pivot = .8; k = sc; }
@@ -245,8 +248,6 @@ function drawKneeler(v, sc, bend, hands = 0){
   ctx.save(); ctx.translate(v.x, v.y);
   ctx.drawImage(img, sx, sh*pivot, sw, sh*(1-pivot), -W/2, py, W, H*(1-pivot));                  // nửa dưới: chân, bồ đoàn
   ctx.drawImage(img, sx, 0, sw, sh*pivot + 1, -W*wx/2, py - H*pivot*f, W*wx, H*pivot*f + 1);     // nửa trên: thân, đầu
-  // tay chắp: rõ khi quỳ thẳng, khuất dần về phía trước khi cúi rạp
-  drawPrayerHands(v.skin, W*wx, H, py - H*pivot*f, H*pivot*f, hands, 1 - Math.max(0, Math.min(1, (bend - .25)/.4)));
   ctx.restore();
   return H*(1-pivot) + H*pivot*f*.9;
 }
@@ -446,7 +447,7 @@ function frame(now){
     ctx.save(); ctx.globalAlpha=v.fade; ctx.translate(v.x,v.y); if (bowK) ctx.transform(1,0,0,1-bowK,0,0);
     let topY;
     const backView = v.w && BACK_PHASES.includes(v.w.phase);
-    if (backView){ ctx.restore(); ctx.save(); ctx.globalAlpha=v.fade; const zs = v.w.zoom ? 1 + .55*ek : 1, bp = backPose(v); topY = drawKneeler(v, ws*1.05*zs, bp.bend, bp.hands); }
+    if (backView){ ctx.restore(); ctx.save(); ctx.globalAlpha=v.fade; const zs = v.w.zoom ? 1 + .55*ek : 1, bp = backPose(v); topY = hasPray(v.skin) ? drawPrayer(v, ws*1.05*zs) : drawKneeler(v, ws*1.05*zs, bp.bend); }
     else if (anim){ const a=ANIM[v.skin], k=ws*1.05*260/a.seatH; if (v.flip) ctx.scale(-1,1); ctx.drawImage(A['anim_'+v.skin], v.frame*a.fw,0,a.fw,a.fh, -a.fw*k/2, -a.fh*k+breathe, a.fw*k, a.fh*k); topY=((v.state==='sit'||(v.w&&v.frame===7))?a.seatH:a.fh*.97)*k*(1-bowK); }
     else { const sk = v.skin==='master'?'monk':v.skin; sprite(A[sk]||A.man,0,breathe,ws*1.05); topY=260*ws; }
     ctx.restore();
