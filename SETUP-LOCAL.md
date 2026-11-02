@@ -62,3 +62,14 @@ Lấy thêm cập nhật từ tác giả gốc (có thể xung đột ở `live/
 - Giọng đọc gọi dịch vụ Microsoft Edge qua mạng, máy phát phải có Internet.
 - tiktok-live-connector là thư viện cộng đồng, không chính thức, có thể ngừng chạy khi TikTok đổi hệ thống.
 - Server chỉ nghe 127.0.0.1. Đừng đặt biến HOST để mở ra mạng ngoài khi chưa có đăng nhập.
+
+## 6. Lên bái
+
+Người xem bình luận **chứa** từ khóa (mặc định: `lạy, bái, lễ Phật, được`) hoặc tặng quà đủ ngưỡng thì nhân vật đứng dậy, đi lên trước chánh điện, quỳ lạy 3 lần, bình luận hiện trên đầu, lạy xong quay về chỗ ngồi.
+
+- Trước chánh điện có 3 chỗ lạy. Đông người thì xếp hàng (tối đa 10), người lạy xong đi xuống là người kế tiếp lên ngay.
+- Một người không xếp hàng hai lần cùng lúc, nên bình luận từ khóa liên tục cũng chỉ được tính một lượt.
+- Lên bái nhờ quà thì hiện bình luận gần nhất của người đó (trong 90 giây), chưa có thì hiện "dâng [tên quà]".
+- Từ khóa có dấu thì so có dấu ("lạy" không khớp "lấy"), gõ không dấu ("lay") thì khớp cả hai.
+- Chỉnh trong bảng điều khiển, mục **4 · Lên bái**: kiểu kích hoạt, từ khóa, quà tối thiểu, số chỗ lạy, số lần lạy, thời gian chờ, giọng đọc. Nút **Thử lên bái** để thử khi chưa live.
+- Test: `cd live && npm test`.

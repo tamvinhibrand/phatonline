@@ -11,6 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
+import { parseKeywords, matchKeyword, WorshipQueue } from './worship.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');            // repo root: serves /assets, /live
@@ -31,6 +32,14 @@ const settings = {
   seatMode: 'auto',                  // auto | 24 | 36 | 64 | 100
   joinOnEnter: false,                // also seat viewers who only enter the room
   gifts: { readAll: true, minDiamonds: 1 },
+  // Lên bái: bình luận chứa từ khóa và/hoặc tặng quà đủ ngưỡng thì nhân vật lên trước chánh điện quỳ lạy
+  worshipMode: 'both',               // both | comment | gift | off
+  worshipKeywords: 'lạy, bái, lễ Phật, được',
+  worshipMinDiamonds: 1,
+  worshipSlots: 3,                   // số chỗ lạy trước chánh điện
+  worshipBows: 3,                    // số lần lạy
+  worshipCooldown: 0,                // giây chờ giữa 2 lần lên bái của cùng 1 người, 0 = không chờ
+  worshipAnnounce: false,            // giọng đọc: Phật tử ... lên lễ Phật
 };
 const viewers = new Map();           // id -> { id, name, skin, avatar, coins, joinedAt, lastAt, lastText, lastTextAt, demo }
 const startedAt = Date.now();
@@ -69,7 +78,7 @@ function seat(id, name, opts = {}){
   if (viewers.size >= 100){                     // full: the longest-quiet non-donor stands up
     const quiet = [...viewers.values()].filter(x => x.coins === 0).sort((a,b) => a.lastAt - b.lastAt)[0];
     if (!quiet) return { v:null, isNew:false };
-    viewers.delete(quiet.id); broadcast({ t:'leave', id: quiet.id });
+    viewers.delete(quiet.id); worship.remove(quiet.id); broadcast({ t:'leave', id: quiet.id });
   }
   v = { id, name: (name||id).slice(0, 18), skin: opts.skin || DEFAULT_SKINS[viewers.size % DEFAULT_SKINS.length],
         avatar: opts.avatar || '', coins: 0, joinedAt: Date.now(), lastAt: Date.now(), demo: !!opts.demo };
@@ -87,6 +96,7 @@ function onChat(id, name, text, avatar){
   if (!isNew && want && want !== v.skin){ v.skin = want; broadcast({ t:'skin', id, skin: want }); }
   v.lastText = text; v.lastTextAt = Date.now();
   broadcast({ t:'chat', id, name: v.name, text });
+  if (['both', 'comment'].includes(settings.worshipMode) && matchKeyword(text, parseKeywords(settings.worshipKeywords))) requestWorship(v, text);
 }
 
 function onGift(id, name, giftName, count, diamonds, avatar){
@@ -100,7 +110,28 @@ function onGift(id, name, giftName, count, diamonds, avatar){
   const line = `Nam mô A Di Đà Phật. Phật tử ${spoken(v.name)} thành tâm dâng ${giftName}${count > 1 ? ', ' + count + ' lần' : ''}. ${prayer}.`;
   broadcast({ t:'gift', id, name: v.name, giftName, count, coins, total: v.coins, tier, prayer });
   if (settings.gifts.readAll || coins >= settings.gifts.minDiamonds) say(line, { tag:'gift', id });
+  if (['both', 'gift'].includes(settings.worshipMode) && coins >= settings.worshipMinDiamonds)
+    requestWorship(v, (v.lastText && Date.now() - v.lastTextAt < 90_000) ? v.lastText : `dâng ${giftName}`);
 }
+
+/* ------------------------------------------------------------ lên bái */
+// Thời gian một lượt ở chỗ lạy: đi lên (~5 giây) + mỗi lần lạy 2,4 giây. Hết lượt thì người kế tiếp lên ngay.
+const worshipMs = () => 5000 + settings.worshipBows * 2400;
+const worship = new WorshipQueue({ slots: settings.worshipSlots, cooldownSec: settings.worshipCooldown, durationMs: worshipMs() });
+function requestWorship(v, text){
+  const r = worship.request({ id: v.id, name: v.name, text });
+  if (r === 'full') addLog('Hàng lên bái đã đủ 10 người, bỏ qua ' + v.name);
+}
+setInterval(() => {
+  const { started, ended } = worship.tick();
+  for (const e of ended) broadcast({ t:'worshipEnd', id: e.id });
+  for (const s of started){
+    const v = viewers.get(s.id); if (!v){ worship.remove(s.id); continue; }
+    broadcast({ t:'worship', id: s.id, slot: s.slot, slots: worship.slots.length, text: s.text, bows: settings.worshipBows, ms: worship.durationMs });
+    addLog(`🙏 ${v.name} lên lễ Phật`);
+    if (settings.worshipAnnounce) say(`Phật tử ${spoken(v.name)} lên lễ Phật.`, { tag:'worship', id: s.id });
+  }
+}, 300).unref();
 
 function pickPrayer(){
   const P = ['Nguyện cầu gia đạo bình an, vạn sự cát tường', 'Nguyện cầu cha mẹ mạnh khỏe, sống lâu', 'Nguyện hồi hướng công đức cho khắp pháp giới chúng sinh',
@@ -197,7 +228,7 @@ function fillDemo(n){
     seat('demo_' + i, name, { demo: true, skin: ['man','woman','woman','man','granny','monk','nun','child'][i % 8] });
   }
 }
-function clearSeats(){ viewers.clear(); broadcast(snapshot()); addLog('Đã làm trống bồ đoàn'); }
+function clearSeats(){ for (const id of viewers.keys()) worship.remove(id); viewers.clear(); broadcast(snapshot()); addLog('Đã làm trống bồ đoàn'); }
 
 /* ------------------------------------------------------------- control */
 function onControl(m){
@@ -214,6 +245,7 @@ function onControl(m){
     case 'say': if (m.text) say(String(m.text).slice(0, 400), { tag:'say' }); break;
     case 'settings':
       applySettings(m.settings || {});
+      worship.resize(settings.worshipSlots); worship.cooldownSec = settings.worshipCooldown; worship.durationMs = worshipMs();
       scheduleChant(); broadcast({ t:'settings', settings, cap: capacity() }); break;
     case 'bots': setBots(!!m.on, +m.n || 12, m.pace); break;
   }
@@ -225,6 +257,10 @@ const SETTING_RULES = {
   voice: v => ['vi-VN-NamMinhNeural', 'vi-VN-HoaiMyNeural'].includes(v) ? v : settings.voice,
   pitch: v => clamp(v, -50, 50), rate: v => clamp(v, -50, 50), moBpm: v => clamp(v, 20, 120), chantEveryMin: v => clamp(v, 1, 60),
   music: Boolean, mo: Boolean, autoChant: Boolean, joinOnEnter: Boolean,
+  worshipMode: v => ['both', 'comment', 'gift', 'off'].includes(v) ? v : settings.worshipMode,
+  worshipKeywords: v => parseKeywords(v).join(', '),
+  worshipMinDiamonds: v => clamp(v, 1, 50000), worshipSlots: v => clamp(v, 1, 5), worshipBows: v => clamp(v, 1, 9),
+  worshipCooldown: v => clamp(v, 0, 3600), worshipAnnounce: Boolean,
   seatMode: v => ['auto', '24', '36', '64', '100'].includes(String(v)) ? String(v) : 'auto',
 };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, Math.round(+v || 0)));
@@ -253,7 +289,7 @@ function setBots(on, n, pace){
     }, every);
     addLog(`🤖 Bật ${n} bot, nhịp ${pace}`);
   } else {
-    for (const id of [...viewers.keys()]) if (String(id).startsWith('bot_')) { viewers.delete(id); broadcast({ t:'leave', id }); }
+    for (const id of [...viewers.keys()]) if (String(id).startsWith('bot_')) { viewers.delete(id); worship.remove(id); broadcast({ t:'leave', id }); }
     addLog('🤖 Tắt bot');
   }
   broadcast({ t:'bots', on }, 'control');

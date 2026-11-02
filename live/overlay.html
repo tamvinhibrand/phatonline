@@ -125,7 +125,7 @@ const visitors = new Map();  // id -> visitor
 let order = [];               // ids in seating order
 function reseat(){
   order = order.filter(id => visitors.has(id));
-  order.forEach((id,i) => { const v = visitors.get(id), s = seats[i]; if (!v || !s) return; v.seat = s; if (v.state==='sit') { v.tx = s.x; v.ty = s.y; } });
+  order.forEach((id,i) => { const v = visitors.get(id), s = seats[i]; if (!v || !s) return; v.seat = s; if (v.state==='sit') { v.tx = s.x; v.ty = s.y; }  /* người đang lên bái (v.w) về chỗ mới khi lạy xong */ });
 }
 document.getElementById('count').textContent = '0/24';
 
@@ -139,6 +139,49 @@ function addVisitor(p, instant){
   if (instant || !hasAnim(v.skin) || !v.seat){ v.state='sit'; v.frame=7; v.x=v.tx=v.seat?.x||540; v.y=v.ty=v.seat?.y||1500; v.fade = instant?1:0; }
 }
 function removeVisitor(id){ visitors.delete(id); reseat(); }
+
+/* ======================= lên bái ======================= */
+// Chỗ lạy ở lối giữa, ngay dưới ba vị thầy. Nhân vật: đứng dậy → đi ra lối giữa → đi lên → vào chỗ lạy → quỳ → lạy N lần
+// → chờ server báo hết lượt → đứng dậy → đi về theo lối giữa → ngồi lại chỗ cũ.
+const ALTAR_Y = 1212;
+const altarX = (slot, n) => 540 + (slot - (n-1)/2) * 150;
+const aisleX = (slot, n) => 540 + (slot - (n-1)/2) * 22;     // mỗi chỗ đi một làn hơi lệch để không đè nhau
+function startWorship(m){
+  const v = visitors.get(m.id); if (!v) return;
+  const ax = altarX(m.slot, m.slots), lx = aisleX(m.slot, m.slots);
+  v.w = { phase:'stand', t:0, bows:m.bows, bowT:0, done:0, end:false,
+          path:[{x:lx, y:v.y}, {x:lx, y:ALTAR_Y}, {x:ax, y:ALTAR_Y}], idx:0, back:null };
+  v.state='worship'; v.bubble={ text:m.text, until:Infinity };
+}
+function endWorship(id){ const v = visitors.get(id); if (v?.w) v.w.end = true; }
+// đi theo danh sách điểm; trả true khi tới điểm cuối
+function walkPath(v, w, dt){
+  const p = w.path[w.idx]; if (!p) return true;
+  const sp = 230*dt, dx = p.x-v.x, dy = p.y-v.y, d = Math.hypot(dx, dy);
+  if (d <= sp){ v.x=p.x; v.y=p.y; w.idx++; return w.idx >= w.path.length; }
+  v.x += dx/d*sp; v.y += dy/d*sp; if (Math.abs(dx) > 2) v.flip = dx < 0;
+  v.ft+=dt; if (v.ft>.15){ v.ft=0; v.frame=(v.frame+1)%4; }
+  return false;
+}
+function updateWorship(v, dt){
+  const w = v.w, anim = hasAnim(v.skin); w.t += dt;
+  switch (w.phase){
+    case 'stand':  v.frame = anim ? 7-Math.min(3, Math.floor(w.t/.22)) : 7; if (w.t > .9){ w.phase='go'; w.t=0; } break;     // ngược động tác ngồi xuống
+    case 'go':     if (walkPath(v, w, dt)){ w.phase='kneel'; w.t=0; v.flip=false; } break;
+    case 'kneel':  v.frame = anim ? 4+Math.min(3, Math.floor(w.t/.22)) : 7; if (w.t > .9){ w.phase='bow'; w.t=0; } break;
+    case 'bow':    v.frame = 7; w.bowT += dt;
+      if (w.bowT >= 2){ w.bowT = 0; w.done++; if (w.done >= w.bows){ w.phase='pray'; w.t=0; } }
+      if (w.bowT < dt*1.5) { mo(); v.glow = Math.max(v.glow, .6); }            // tiếng mõ mỗi lạy
+      break;
+    case 'pray':   v.frame = 7; break;                                           // quỳ chờ hết lượt
+    case 'rise':   v.frame = anim ? 7-Math.min(3, Math.floor(w.t/.22)) : 7; if (w.t > .9){ w.phase='back'; w.t=0;
+      const s = v.seat || { x:540, y:1500 }, lx = w.path[0].x; w.path = [{x:lx, y:ALTAR_Y}, {x:lx, y:s.y}, {x:s.x, y:s.y}]; w.idx = 0; } break;
+    case 'back':   if (walkPath(v, w, dt)){ v.w = null; v.state='sitting'; v.sitT=0; v.flip=false; v.bubble=null; } break;
+  }
+  if (w.end && ['bow','pray','kneel'].includes(w.phase)){ w.phase='rise'; w.t=0; v.bubble=null; }
+}
+// góc cúi khi lạy: 0 = thẳng, 1 = rạp hết
+function worshipBowAmount(v){ const w = v.w; if (!w || w.phase !== 'bow') return 0; return Math.sin(Math.min(1, w.bowT/1.6)*Math.PI); }
 
 /* ======================= HUD ======================= */
 let startedAt = Date.now();
@@ -228,8 +271,10 @@ function connect(){
       case 'settings': Object.assign(settings,m.settings); applySettings(); if (m.cap!==cap){ layout(m.cap); updateCount(); } break;
       case 'join': if (m.cap!==cap) layout(m.cap); addVisitor(m.v, m.v.demo && visitors.size>8); updateCount(); break;
       case 'leave': removeVisitor(m.id); updateCount(); renderMerit(); break;
+      case 'worship': startWorship(m); break;
+      case 'worshipEnd': endWorship(m.id); break;
       case 'skin': { const v=visitors.get(m.id); if(v){ v.skin=m.skin; v.glow=.8; if(v.state!=='sit'){ v.state='sit'; v.frame=7; } } } break;
-      case 'chat': { const v=visitors.get(m.id); if(v){ v.bubble={text:m.text, until:performance.now()+6000}; v.bow=.6; } } break;
+      case 'chat': { const v=visitors.get(m.id); if(v && !v.w){ v.bubble={text:m.text, until:performance.now()+6000}; v.bow=.6; } } break;
       case 'gift': { const v=visitors.get(m.id); if(v){ v.coins=m.total; giftFx(v,m.tier); } renderMerit(); showGift(m); } break;
       case 'like': { const v=visitors.get(m.id); if(v) hearts(v,m.n); } break;
       case 'tts': queueTTS(m.url); break;
@@ -286,7 +331,8 @@ function frame(now){
   const list=[...visitors.values()].sort((a,b)=>a.y-b.y);
   for (const v of list){
     const anim=hasAnim(v.skin), s=v.seat?.scale||.4;
-    if (v.state==='walk' && v.seat){
+    if (v.w) updateWorship(v, dt);
+    else if (v.state==='walk' && v.seat){
       const depth=(v.y-FLOOR.yTop)/(FLOOR.yBot-FLOOR.yTop), sp=(170+190*Math.max(0,Math.min(1.5,depth)))*dt, dx=v.seat.x-v.x, dy=v.seat.y-v.y;
       if (Math.abs(dy)>3){ v.y+=Math.max(-sp,Math.min(sp,dy)); v.x+=(540-v.x)*Math.min(1,dt*6); v.flip=false; } else { v.x+=Math.max(-sp,Math.min(sp,dx)); v.flip=dx<0; }
       v.ft+=dt; if (v.ft>.15){ v.ft=0; v.frame=(v.frame+1)%4; }
@@ -294,17 +340,18 @@ function frame(now){
     } else if (v.state==='sitting'){ v.sitT+=dt; v.frame=4+Math.min(3,Math.floor(v.sitT/.22)); if (v.sitT>.9){ v.state='sit'; v.frame=7; } }
     else if (v.seat){ v.x+=(v.seat.x-v.x)*Math.min(1,dt*3); v.y+=(v.seat.y-v.y)*Math.min(1,dt*3); }      // glide when the grid grows
     v.fade=Math.min(1,v.fade+dt*2); v.glow=Math.max(0,v.glow-dt*.45); v.bow=Math.max(0,v.bow-dt*.7);
-    const ws = v.state==='walk' ? (.26+.26*Math.max(0,Math.min(1,(v.y-FLOOR.yTop)/(FLOOR.yBot-FLOOR.yTop)))) * ((6/((GRID[cap]||GRID[24])[0]))**.7) : s;
+    const ws = v.w ? Math.max(.38, (.26+.26*Math.max(0,Math.min(1,(v.y-FLOOR.yTop)/(FLOOR.yBot-FLOOR.yTop)))) * ((6/((GRID[cap]||GRID[24])[0]))**.7))
+             : v.state==='walk' ? (.26+.26*Math.max(0,Math.min(1,(v.y-FLOOR.yTop)/(FLOOR.yBot-FLOOR.yTop)))) * ((6/((GRID[cap]||GRID[24])[0]))**.7) : s;
     if (v.glow>0 || v.skin==='master'){ ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=Math.max(v.glow*.75, v.skin==='master'?.35+.1*Math.sin(t*1.6):0);
       const g=ctx.createRadialGradient(v.x,v.y-110*ws,8,v.x,v.y-110*ws,200*ws); g.addColorStop(0,'rgba(255,205,120,.95)'); g.addColorStop(1,'rgba(255,160,60,0)'); ctx.fillStyle=g; ctx.fillRect(v.x-230*ws,v.y-340*ws,460*ws,400*ws); ctx.restore(); }
-    const breathe = v.state==='sit' ? Math.sin(t*1.1+v.phase)*2*ws : 0, bowK = v.state==='sit' ? Math.sin(Math.min(1,v.bow)*Math.PI)*.04 : 0;
+    const breathe = v.state==='sit' ? Math.sin(t*1.1+v.phase)*2*ws : 0, bowK = v.state==='sit' ? Math.sin(Math.min(1,v.bow)*Math.PI)*.04 : worshipBowAmount(v)*.32;
     ctx.save(); ctx.globalAlpha=v.fade; ctx.translate(v.x,v.y); if (bowK) ctx.transform(1,0,0,1-bowK,0,0);
     let topY;
-    if (anim){ const a=ANIM[v.skin], k=ws*1.05*260/a.seatH; if (v.flip) ctx.scale(-1,1); ctx.drawImage(A['anim_'+v.skin], v.frame*a.fw,0,a.fw,a.fh, -a.fw*k/2, -a.fh*k+breathe, a.fw*k, a.fh*k); topY=(v.state==='sit'?a.seatH:a.fh*.97)*k; }
+    if (anim){ const a=ANIM[v.skin], k=ws*1.05*260/a.seatH; if (v.flip) ctx.scale(-1,1); ctx.drawImage(A['anim_'+v.skin], v.frame*a.fw,0,a.fw,a.fh, -a.fw*k/2, -a.fh*k+breathe, a.fw*k, a.fh*k); topY=((v.state==='sit'||(v.w&&v.frame===7))?a.seatH:a.fh*.97)*k*(1-bowK); }
     else { const sk = v.skin==='master'?'monk':v.skin; sprite(A[sk]||A.man,0,breathe,ws*1.05); topY=260*ws; }
     ctx.restore();
     const ty=v.y-topY-14*ws/.4;
-    tag(v.name, v.x, ty, ws, v.skin==='master'||v.coins>=99?'gold':'', avatar(v.avatar), v.state==='sit' ? v.seat?.gap : 0);
+    tag(v.name, v.x, ty, ws, v.skin==='master'||v.coins>=99||v.w?'gold':'', avatar(v.avatar), v.state==='sit' ? v.seat?.gap : 0);
     if (v.bubble && now<v.bubble.until) bubbles.push([v.bubble.text, v.x, ty-Math.max(18,30*ws/.4), ws]); else v.bubble=null;
   }
   for (const b of bubbles) bubble(...b);

@@ -118,6 +118,22 @@ button.red{background:var(--red);border-color:#b84a33}
     </div>
     <label class="check"><input type="checkbox" id="joinOnEnter"> Người vào phòng cũng được ngồi (không cần bình luận)</label>
   </section>
+
+  <section class="card">
+    <h2>4 · Lên bái</h2>
+    <p class="hint">Người xem bình luận chứa từ khóa hoặc tặng quà đủ ngưỡng thì nhân vật đứng dậy, lên trước chánh điện quỳ lạy, bình luận hiện trên đầu, lạy xong quay về chỗ. Đông người thì xếp hàng, người xuống là người kế tiếp lên.</p>
+    <label>Kích hoạt bằng<select id="worshipMode"><option value="both">Bình luận từ khóa hoặc tặng quà</option><option value="comment">Chỉ bình luận từ khóa</option><option value="gift">Chỉ tặng quà</option><option value="off">Tắt</option></select></label>
+    <label>Từ khóa (cách nhau bằng dấu phẩy, bình luận chứa một từ là được)<input id="worshipKeywords" value="lạy, bái, lễ Phật, được"></label>
+    <div class="row">
+      <label>Quà tối thiểu (💎)<input id="worshipMinDiamonds" type="number" min="1" value="1"></label>
+      <label>Số chỗ lạy<input id="worshipSlots" type="number" min="1" max="5" value="3"></label>
+      <label>Số lần lạy<input id="worshipBows" type="number" min="1" max="9" value="3"></label>
+    </div>
+    <label>Chờ giữa 2 lần lên bái của cùng 1 người (giây, 0 = không chờ)<input id="worshipCooldown" type="number" min="0" max="3600" value="0"></label>
+    <label class="check"><input type="checkbox" id="worshipAnnounce"> Giọng đọc "Phật tử … lên lễ Phật"</label>
+    <div class="row tight"><button class="gold" id="btnWorship">🙏 Thử lên bái</button><button id="btnWorship5">Thử 5 người cùng lúc</button></div>
+    <p class="hint">Từ khóa có dấu thì so có dấu ("lạy" không khớp "lấy"); gõ không dấu ("lay") thì khớp cả hai.</p>
+  </section>
 </div>
 
 <section class="card" style="margin-top:16px">
@@ -131,7 +147,7 @@ const $ = id => document.getElementById(id);
 let ws = null;
 const send = (cmd, extra={}) => ws?.readyState===1 && ws.send(JSON.stringify({ t:'ctl', cmd, ...extra }));
 function logLine(s){ const el=$('log'); el.textContent += s + '\n'; el.scrollTop = el.scrollHeight; }
-const SETTING_IDS = ['voice','pitch','rate','music','mo','autoChant','moBpm','chantEveryMin','title','subtitle','seatMode','joinOnEnter'];
+const SETTING_IDS = ['worshipMode','worshipKeywords','worshipMinDiamonds','worshipSlots','worshipBows','worshipCooldown','worshipAnnounce','voice','pitch','rate','music','mo','autoChant','moBpm','chantEveryMin','title','subtitle','seatMode','joinOnEnter'];
 function fillSettings(s){ for (const k of SETTING_IDS){ const el=$(k); if (!el || s[k]===undefined) continue; if (el.type==='checkbox') el.checked=!!s[k]; else el.value=s[k]; } }
 function readSettings(){ const o={}; for (const k of SETTING_IDS){ const el=$(k); o[k] = el.type==='checkbox' ? el.checked : el.type==='number' ? +el.value : el.value; } return o; }
 const people = new Map();
@@ -178,6 +194,10 @@ $('btnChant').onclick = () => send('chant');
 $('btnBell').onclick = () => send('bell');
 $('btnMo').onclick = () => send('mo');
 for (const k of SETTING_IDS) $(k).addEventListener('change', () => send('settings', { settings: readSettings() }));
+// thử lên bái: gửi bình luận chứa từ khóa đầu tiên
+const firstKw = () => ($('worshipKeywords').value.split(',')[0] || 'lạy').trim();
+$('btnWorship').onclick = () => send('chat', { name: $('simName').value, text: `Con xin ${firstKw()} Phật, cầu gia đình bình an` });
+$('btnWorship5').onclick = () => ['Minh An','Thu Hà','Bảo Châu','Đức Anh','Ngọc Lan'].forEach((n, i) => setTimeout(() => send('chat', { name: n, text: `${firstKw()} Phật` }), i * 300));
 </script>
 </body>
 </html>
